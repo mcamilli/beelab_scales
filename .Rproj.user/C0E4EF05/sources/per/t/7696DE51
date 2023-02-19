@@ -1,9 +1,9 @@
 {
     "id": "7696DE51",
-    "path": "~/Scales Clean Analysis/Scales Data_ Script.R",
+    "path": "C:/Users/win827/Scales Clean Analysis/Scales Data_ Script.R",
     "project_path": "Scales Data_ Script.R",
     "type": "r_source",
-    "hash": "2352134011",
+    "hash": "1902400742",
     "contents": "",
     "dirty": false,
     "created": 1676736827316.0,
@@ -13,15 +13,15 @@
         "tempName": "Untitled1",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "21,20",
-        "scrollLine": "15"
+        "cursorPosition": "202,27",
+        "scrollLine": "181"
     },
     "folds": "",
-    "lastKnownWriteTime": 1676742692,
+    "lastKnownWriteTime": 1676810584,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1676742692371,
+    "last_content_update": 1676810584850,
     "read_only": false,
     "read_only_alternatives": []
 }

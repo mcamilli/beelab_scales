@@ -206,8 +206,11 @@ scales_func <- function(data, ftrim, btrim) {
   t.test(diff ~ Site, data = afterBloom_diff)
   
   t.test(diff ~ Site, data = duringBloom_diff)
-  
 
+  View (summaryDB)  ##View summarized table during blooming
+
+  
+  View (summaryAB) ##View summarized table after blooming
   
   
   
