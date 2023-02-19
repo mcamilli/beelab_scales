@@ -1,0 +1,208 @@
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(rstatix)
+
+
+############# Loading and processing data
+scale01 <- X49_03_BA
+scale02 <- X49_03_BF
+scale03 <- X49_03_C2
+scale04 <- X49_03_B4
+scale05 <- X49_03_C4
+scale06 <- X49_03_C5
+scale07 <- X49_03_C7
+scale08 <- X49_03_B9
+
+## Merging scales 
+
+data2022 <- rbind (scale01, scale03, scale04, scale06, scale07, scale08)
+
+
+## Adding Hive and Site column
+
+data2022_hive_site <- data2022 %>%
+  mutate(Hive = case_when(
+    endsWith(UUID, "A") ~ "1",
+    endsWith(UUID, "2") ~ "2",
+    endsWith(UUID, "B4") ~ "1",
+    endsWith(UUID, "C5") ~ "2",
+    endsWith(UUID,"C7") ~ "3",
+    endsWith(UUID, "B9") ~ "4",
+  )) %>%
+  mutate(Site = case_when(
+    endsWith(UUID, "A") ~ "Petrofika",
+    endsWith(UUID, "2") ~ "Petrofika",
+    endsWith(UUID, "B4") ~ "Goodale",
+    endsWith(UUID, "C5") ~ "Goodale",
+    endsWith(UUID,"C7") ~ "Goodale",
+    endsWith(UUID, "B9") ~ "Goodale",
+  ))
+
+##### Processing data function
+
+scales_func <- function(x, ftrim, btrim) {
+  x %>%
+    mutate(Local_TimeStamp = as.POSIXct(Local_TimeStamp,format = "%m/%d/%Y %H:%M" )) %>%
+    dplyr::mutate(Local_TimesTamp = lubridate::ceiling_date(Local_TimeStamp, unit = "hour"), # round Time Stamp to nearest hour
+                  Site = factor(Site), # make site a factor
+                  time = as.numeric(Local_TimesTamp), # make TimeStamp_round numeric
+                  UUID = factor(UUID)) %>% # make ScaleID a factor
+    dplyr::select(Local_TimesTamp, time,Site, UUID, Hive, Weight) %>% 
+    dplyr::filter(Local_TimesTamp > ftrim & Local_TimesTamp < btrim) %>% # trim data to desired start and end dates
+    group_by(UUID) %>% 
+    arrange(Local_TimesTamp) # arrange chronologically within ScaleID
+}
+
+
+## Processing data with dataproc function
+data2022_hive_site_proc <- scales_func(data2022_hive_site,
+                            ftrim = "2022-06-01", 
+                            btrim = "2022-09-15" 
+)
+
+
+### Trimming During Blooming
+
+duringBloom <- scales_func(data2022_hive_site, ftrim = "2022-07-22", btrim = "2022-07-27")
+
+
+### Trimming After Blooming
+
+afterBloom <- scales_func(data2022_hive_site, ftrim = "2022-08-19", btrim = "2022-08-25")
+
+
+### Filter midnight hours
+
+data2022_midnight <- data2022_hive_site_proc %>%
+  dplyr::filter(hour(Local_TimesTamp) == 00:00:00) 
+
+
+## Within-day differenced weight
+
+data2022_diff <- data2022_hive_site_proc %>%
+  dplyr::filter(hour(Local_TimesTamp) == 00:00:00) %>%
+  group_by(UUID) %>%
+  arrange(Local_TimesTamp) %>%
+  dplyr::mutate(diff = Weight - lag(Weight, default = first(Weight)))
+
+duringBloom_diff <- duringBloom %>%
+  dplyr::filter(hour(Local_TimesTamp) == 00:00:00) %>%
+  group_by(UUID) %>%
+  arrange(Local_TimesTamp) %>%
+  dplyr::mutate(diff = Weight - lag(Weight, default = first(Weight)))
+
+afterBloom_diff <- afterBloom %>%
+  dplyr::filter(hour(Local_TimesTamp) == 00:00:00) %>%
+  group_by(UUID) %>%
+  arrange(Local_TimesTamp) %>%
+  dplyr::mutate(diff = Weight - lag(Weight, default = first(Weight)))
+
+
+
+#### Plotting raw graph
+
+ggplot(data2022_hive_site_proc, aes(Local_TimesTamp, Weight *0.45, color = Hive)) +
+  geom_point() +
+  xlab("Time") +
+  ylab(" Hourly Hive Weight (Kg)")+
+  facet_wrap(~Site)
+
+
+### Only in midnight weight (daily)
+
+ggplot(data2022_midnight, aes(Local_TimesTamp, Weight *0.45, color = Hive)) +
+  geom_point() +
+  xlab("Time") +
+  ylab("Daily Hive Weight (Kg)")+
+  facet_wrap(~Site)
+
+
+#### Plot differenced weight (within-day weight)
+
+ggplot(data2022_diff, aes(Local_TimesTamp, diff *0.45, color = Hive)) +
+  geom_point() +
+  xlab("Time") +
+  ylab("Within-day Hive Weight Change (Kg)")+
+  facet_wrap(~Site)
+
+#### 10 kg limit
+
+ggplot(data2022_diff, aes(Local_TimesTamp, diff *0.45, color = Hive)) +
+  geom_point() +
+  xlab("Time") +
+  ylab("Within-day Hive Weight Change (Kg)")+
+  ylim(-10,10) +
+  facet_wrap(~Site)
+
+
+#### before and after bloom
+
+ggplot(duringBloom_diff, aes(Local_TimesTamp, diff *0.45, color = Hive)) +
+  geom_point( size = 3) +
+  xlab("Time") +
+  ylab("Within-day Hive Weight Change (Kg)")+
+  facet_wrap(~Site)
+
+ggplot(afterBloom_diff, aes(Local_TimesTamp, diff *0.45, color = Hive)) +
+  geom_point(size = 3) +
+  xlab("Time") +
+  ylab("Within-day Hive Weight Change (Kg)")+
+  facet_wrap(~Site)
+
+#### Statix T Test
+
+season <-season
+
+shapiro.test(duringBloom_diff$diff)
+shapiro.test(afterBloom_diff$diff)
+
+summaryDB <- group_by(duringBloom_diff, Site) %>%
+  summarise(
+    count = n(),
+    mean = mean(diff *0.45, na.rm = TRUE),
+    sd = sd(diff*0.45, na.rm = TRUE),
+    median = median(diff*0.45, na.rm = TRUE),
+    IQR = IQR(diff*0.45, na.rm = TRUE)
+  )%>%
+  mutate (pvalue = 0.024)
+
+summaryAB <- group_by(afterBloom_diff, Site) %>%
+  summarise(
+    count = n(),
+    mean = mean(diff*0.45, na.rm = TRUE),
+    sd = sd(diff*0.45, na.rm = TRUE),
+    median = median(diff*0.45, na.rm = TRUE),
+    IQR = IQR(diff*0.45, na.rm = TRUE)
+  )  %>%
+  mutate (pvalue = 0.001)
+
+summarySeason<- group_by(season, season) %>% 
+  summarise(
+    count = n(),
+    mean = mean(diff*0.45, na.rm = TRUE),
+    sd = sd(diff*0.45, na.rm = TRUE),
+    median = median(diff*0.45, na.rm = TRUE),
+    IQR = IQR(diff*0.45, na.rm = TRUE)
+  ) %>%
+  mutate (pvalue = 0.003)
+
+
+  t.test(diff ~ Site, data = afterBloom_diff)
+  
+  t.test(diff ~ Site, data = duringBloom_diff)
+  
+  t.test(diff ~ season, data =season)
+  
+  
+  
+  #### Plot means per site
+  ggplot(mean_duringBloom, aes(Local_TimesTamp, diff)) +
+    geom_point() +
+    xlab("Time") +
+    ylab("Diff Weight (Kg)") +
+    facet_wrap(~Site)
+  
+  
+
+    
